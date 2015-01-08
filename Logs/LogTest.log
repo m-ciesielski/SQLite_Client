@@ -1,0 +1,4 @@
+sty 07, 2015 9:31:59 PM sqliteDB.Log initializeLog
+INFO: New Log started
+sty 07, 2015 9:32:00 PM sqliteDB.TableController createTable
+INFO: Created view of table: Towar
