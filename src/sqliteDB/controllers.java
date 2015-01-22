@@ -1,32 +1,32 @@
 package sqliteDB;
 
 
-import java.awt.Dimension;
+
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.awt.event.WindowEvent;
+import java.beans.PropertyChangeEvent;
+import java.beans.PropertyChangeListener;
+
 import java.util.ArrayList;
 import java.util.logging.Logger;
 
 import javax.swing.JButton;
-import javax.swing.JFrame;
+import javax.swing.JOptionPane;
 import javax.swing.ListSelectionModel;
+import javax.swing.event.ChangeEvent;
+import javax.swing.event.ChangeListener;
 import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.ListSelectionListener;
 
 abstract class Controller{
-	ListPanel view;
-	static Statement stat;
 	static Logger logger;
 }
 
 class SideController extends Controller{
-	SidePanelModel model;
-	SidePanel view;
-	TableController tableController;
+	private SidePanelModel model;
+	private SidePanel view;
+	private TableController tableController;
 	
 	public SideController(SidePanelModel model, SidePanel view,TableController tableController) {
 		this.model=model;
@@ -34,58 +34,171 @@ class SideController extends Controller{
 		this.tableController=tableController;
 	}
 	
-	void insertTableColumns()
-	{
+	void insertTableNames(){
+		view.removeListListener();
+		model.clearTableNames();
+			view.clearListModel();
 			model.fetchTableNames();
 			ArrayList<String> tableNames=model.getTableNames();
 			for(int i=0;i<tableNames.size();++i)
 				view.addListElement(tableNames.get(i));
-		view.createList();
+				
+		view.createList("Table");
+		addSidePanelListListener();
 	}
 	
-	void addSidePanelListener(){
-		view.addListSelectionListener(new ListSelectionListener() {
-			
+	void insertViewNames(){
+		view.removeListListener();
+		model.clearViewNames();
+		view.clearListModel();
+		model.fetchViewNames();
+		ArrayList<String> viewNames=model.getViewNames();
+		for(int i=0;i<viewNames.size();++i)
+			view.addListElement(viewNames.get(i));
+		view.createList("View");
+		addSidePanelListListener();
+	}
+	
+	private void addSidePanelListListener(){
+		view.getList().addListSelectionListener(new ListSelectionListener() {
 			@Override
 			public void valueChanged(ListSelectionEvent e) {
-				ListSelectionModel lsm = (ListSelectionModel)e.getSource();
-				tableController.clearView();
-				tableController.setModelTableName(model.getTableName(lsm.getMinSelectionIndex()));
-				tableController.createTable();
+				if(e.getValueIsAdjusting()) // Sprawdzenie w celu pominiecia duplikowanych wydarzen
+				{
+					ListSelectionModel lsm = view.getList().getSelectionModel();
+					if(view.getSelectedIndex()==0){
+							
+							tableController.clearView();
+							tableController.setModelTableName(model.getTableName(lsm.getMinSelectionIndex()));
+							tableController.createTable();		
+					}
+					else{
+						tableController.clearView();
+						tableController.setModelTableName(model.getViewName(lsm.getMinSelectionIndex()));
+						tableController.createTable();	
+					}
+				}
+			}
+		});
+	}
+	void addSidePanelTabListener(){
+		view.addChangeListener(new ChangeListener() {
+			
+			@Override
+			public void stateChanged(ChangeEvent e) {
+				System.out.println(view.getSelectedIndex());
+				if(view.getSelectedIndex()==0)
+				{
+					insertTableNames();
+					tableController.setMode(0);
+				}
+				else if(view.getSelectedIndex()==1){
+					insertViewNames();
+					tableController.setMode(1);
+				}
 			}
 		});
 	}
 }
 
 class TableController extends Controller{
-	DatabaseTableModel model;
-	TablePanel view;
-	TableEditionModel editionModel;
+	private DatabaseTableModel model;
+	private TablePanel view;
+	private TableEditionModel editionModel;
+	private int mode; //0=tabela, 1=widok
 	public TableController(DatabaseTableModel model, TablePanel view) {
 		this.model=model;
 		this.view=view;
+		mode=0;
+		initializeViewListeners();
 	}
 	
-	void insertTableColumns()
-	{
-		ArrayList<String> columnNames=model.getColumnNames();
-		
-		for(int i=0;i<columnNames.size();++i)
-			view.addListElement(columnNames.get(i));
-		
-		view.createList();
+	public void setMode(int mode){this.mode=mode;}
+	
+	private void initializeViewListeners(){
+		addNewRecordButtonListener(view.getNewRecordButton());
+		addDeleteButtonListener(view.getDeleteButton());
+		addFilterButtonListener();
 	}
 	
-	void addNewRecordButtonListener(JButton insertButton, final JFrame frame){
+	private void addNewRecordButtonListener(JButton insertButton){
 		insertButton.addActionListener(new ActionListener() {
 			
 			@Override
 			public void actionPerformed(ActionEvent e) {
-				// TODO Auto-generated method stub
-				view.createNewRecordFrame(frame);
+				if(mode==0)
+				{
+					view.createNewRecordDialog(model.getColumnNames(), model.getColumnClasses());
+					addCommitButtonListener(view.getCommitButton());	
+				}
+				
 			}
 		});
 	}
+	
+	private void addCommitButtonListener(JButton commitButton){
+		commitButton.addActionListener(new ActionListener() {
+			
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				// TODO Auto-generated method stub
+				Query insertQuery=new Query(Query.MainStatement.INSERT, model.getTableName(),
+						model.getColumnNames(), null, view.getInsertedValues());
+				model.executeQuery(insertQuery.createQueryString());
+				clearView();
+				createTable();
+				view.revalidate();
+				view.repaint();
+			}
+		});
+	}
+	
+	private void addDeleteConfirmationOptionPaneListener(final JOptionPane optionPane){
+		optionPane.addPropertyChangeListener(new PropertyChangeListener() {
+			
+			@Override
+			public void propertyChange(PropertyChangeEvent evt) {
+				int value = ((Integer)optionPane.getValue()).intValue();
+				if (value == JOptionPane.OK_OPTION) {
+				    Query deleteQuery=new Query(Query.MainStatement.DELETE, model.getTableName(),
+				    		model.getColumnNames(), view.getTable().getSelectedRows());
+				    model.executeQuery(deleteQuery.createQueryString());
+				    clearView();
+					createTable();
+					view.revalidate();
+					view.repaint();
+					view.getDeleteConfirmationDialog().dispatchEvent(new WindowEvent(
+		                    view.getDeleteConfirmationDialog(), WindowEvent.WINDOW_CLOSING));
+				    
+				} else if (value == JOptionPane.CANCEL_OPTION) {
+				   // view.getDeleteConfirmationDialog().setVisible(false);
+				    view.getDeleteConfirmationDialog().dispatchEvent(new WindowEvent(
+		                    view.getDeleteConfirmationDialog(), WindowEvent.WINDOW_CLOSING));
+				}
+				
+			}
+		});
+	}
+	
+	private void addDeleteButtonListener(JButton deleteButton){
+		deleteButton.addActionListener(new ActionListener() {
+			
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				if(view.getTable().getSelectedRows().length>0)
+				{
+					if(mode==0)
+					{
+						view.popupDeleteConfirmationDialog();
+						addDeleteConfirmationOptionPaneListener(view.getDeleteConfirmationOptionPane());		
+					}
+					
+				}
+				
+			}
+		});
+	}
+	
 	
 	private Object[][] tableDataToArray(ArrayList<ArrayList<Object>> arg){
 		Object array [][];
@@ -104,7 +217,8 @@ class TableController extends Controller{
 		return array;
 	}
 	public void clearView(){
-		view.remove(1);
+		view.remove(view.getTableScroll());
+		view.revalidate();
 	}
 	public void createTable(){
 		editionModel=new TableEditionModel(tableDataToArray(model.getTableData()),
@@ -113,8 +227,15 @@ class TableController extends Controller{
 		logger.info("Created view of table: "+model.getTableName());
 	}
 	
-	public void updateModel(){
-		
+	public void addFilterButtonListener()
+	{
+		view.getFilterButton().addActionListener(new ActionListener() {
+			
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				view.popupFilterDialog(model.getColumnClasses());
+			}
+		});
 	}
 	
 	public void setModelTableName(String tableName){
