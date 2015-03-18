@@ -1,8 +1,4 @@
 package sqliteDB;
-/**
-@version 1.01 2004-09-24
-@author Cay Horstmann
-*/
 
 import java.sql.*;
 import java.text.DateFormat;
@@ -17,43 +13,39 @@ import java.util.logging.Logger;
 import javax.swing.JFrame;
 import javax.swing.SwingUtilities;
 
+
+interface Loggable{
+	final static Logger LOGGER=Logger.getLogger("CRUD SQLITE Log");
+}
+
+
+
 /**
-Program sprawdzajṗcy poprawnoæ konfiguracji
-bazy danych i sterownika JDBC.
-*/
+ * Main Class.
+ * @author mciesielski
+ *
+ */
 class dbase
 {  
 	static Connection conn;
 	static Statement stat;
+	static boolean connected=false;
 	private static void createAndShowGUI (final JFrame f){
-		System.out.println("Created GUI on EDT? "+
-	            SwingUtilities.isEventDispatchThread());
 	    f.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
 	    f.setSize(800,600);
 	    f.addWindowListener(new WindowListener() {
 			
 			@Override
-			public void windowOpened(WindowEvent e) {
-				
-				
-			}
+			public void windowOpened(WindowEvent e) {}
 			
 			@Override
-			public void windowIconified(WindowEvent e) {
-				
-				
-			}
+			public void windowIconified(WindowEvent e) {}
 			
 			@Override
-			public void windowDeiconified(WindowEvent e) {
-				
-			}
+			public void windowDeiconified(WindowEvent e) {}
 			
 			@Override
-			public void windowDeactivated(WindowEvent e) {
-				
-				
-			}
+			public void windowDeactivated(WindowEvent e) {}
 			
 			@Override
 			public void windowClosing(WindowEvent e) {
@@ -65,16 +57,10 @@ class dbase
 			}
 			
 			@Override
-			public void windowClosed(WindowEvent e) {
-				// TODO Auto-generated method stub
-				
-			}
+			public void windowClosed(WindowEvent e) {}
 			
 			@Override
-			public void windowActivated(WindowEvent e) {
-				// TODO Auto-generated method stub
-				
-			}
+			public void windowActivated(WindowEvent e) {}
 		});
 	    
 	    //f.pack();
@@ -84,61 +70,61 @@ class dbase
 	
 public static void main (String args[])
 {  
-	
-   try
-   {  
       //runTest();
-	   Logger logger=Logger.getLogger("CRUD SQLITE Log");
-	   Log.initializeLog(logger);
-	   conn = getConnection();
-	   stat = conn.createStatement();
+	   final JFrame f = new JFrame("CRUD");
+	   TablePanel mainPanel=new TablePanel(f);
+	   SidePanel sidePanel=new SidePanel(f);
+	   
+		Logger logger=Logger.getLogger("CRUD SQLITE Log");
+	   	//Log.initializeLog(logger);
+	   	Query.logger=logger;
+	   	
+	   	DefaultTableModel tableModel=new DefaultTableModel();
+	   	
+	    SidePanelModel sideModel= new SidePanelModel();
+	    DefaultTableController mainPanelController=new DefaultTableController(tableModel, mainPanel);
+	   	SideController sideController=new SideController(sideModel, sidePanel,mainPanelController);
+	   	
+	   	TopMenu topMenu=new TopMenu(f, sideController);
+	   if(connected==true)
+	   {
+		   
+		   	
+		   	//DatabaseTableModel.stat=stat;
+		   	//AbstractModel.conn=conn;
+		   	
+
+		   tableModel.setTableName(sideModel.getTableName(0));
+		    sideController.updateTableNames();
+		    System.out.println("fdsfdsf");
+		    mainPanelController.createTable();
+		    
+		   // sideController.addSidePanelListListener();
+		    sideController.addSidePanelTabListener();
+	   }
+	   
+	   
+	   
+	   //conn = getConnection();
+	   //stat = conn.createStatement();
 	   
 	 //+=================================================//
 	    ///TEST MVC
-	   	Query.logger=logger;
-	   	DatabaseTableModel.stat=stat;
-	   	AbstractModel.conn=conn;
-	   	AbstractModel.logger=logger;
-	   	final JFrame f = new JFrame("CRUD");
-	    DatabaseTableModel tableModel=new DatabaseTableModel("Towar");
-	    TablePanel mainPanel=new TablePanel(f);
-	    Controller.logger=logger;
-	    TableController mainPanelController=new TableController(tableModel, mainPanel);
-	    SidePanel sidePanel=new SidePanel(f);
-	    SidePanelModel sideModel= new SidePanelModel();
-	    SideController sideController=new SideController(sideModel, sidePanel,mainPanelController);
-	    TopMenu topMenu=new TopMenu(f,logger,sideController);
-	    sideController.insertTableNames();
-	    mainPanelController.createTable();
-	    
-	   // sideController.addSidePanelListListener();
-	    sideController.addSidePanelTabListener();
+	   	
 	  //+=================================================//
 	    
 	 //=====================================================//
 	   //Inicjalizacja GUI
 	   SwingUtilities.invokeLater(new Runnable() {
            public void run() {
-           		f.repaint();
+           		//f.repaint();
                //createAndShowGridGUI(mainPan);
         	   createAndShowGUI(f);
         	   
            }
        });
 	 //=====================================================//
-   }
-   catch (SQLException ex)
-   {  
-      while (ex != null)
-      {  
-         ex.printStackTrace();
-         ex = ex.getNextException();
-      }
-   }
-   catch (IOException ex)
-   {  
-      ex.printStackTrace();
-   }
+
    
 }
 
@@ -150,7 +136,9 @@ public static void main (String args[])
 */
 private static void closeJDBCResources(){
 	try{
+		if(stat!=null)
 		stat.close();
+		if(conn!=null)
 		conn.close();
 	}
 	catch(SQLException e){

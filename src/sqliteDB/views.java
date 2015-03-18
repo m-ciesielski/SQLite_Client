@@ -39,36 +39,17 @@ import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.table.TableModel;
 import javax.swing.table.TableRowSorter;
 
-
-
-class TopMenu {
-	private JMenu menu;
-	private JMenuBar menuBar;
-	private JMenuItem menuItem;
+class FileChooser implements Loggable{
 	private JFileChooser fileChooser;
 	private JDialog fileChooserDialog;
 	private JPanel fileChooserPanel;
-	private Logger logger;
-	private SideController sideController;
-	TopMenu(JFrame f,Logger logger, SideController sideController){
-		this.sideController=sideController;
-		menu=new JMenu("menu");
-		menuBar=new JMenuBar();
-		menuItem=new JMenuItem("Polacz z baza danych");
-		menuItem.addActionListener(new ActionListener() {
-			
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				popupFileChooser();
-			}
-		});
-		menu.add(menuItem);
-		menuBar.add(menu);
-		this.logger=logger;
-		f.setJMenuBar( menuBar);
-		
+	private DatabaseOverviewController controller;
+	public FileChooser(DatabaseOverviewController controller) {
+		if(controller!=null)
+			this.controller=controller;
+		else
+			throw new IllegalArgumentException();
 	}
-	
 	void popupFileChooser(){
 		fileChooserPanel=new JPanel();
 		fileChooser=new JFileChooser();
@@ -80,30 +61,58 @@ class TopMenu {
 		int retVal=fileChooser.showOpenDialog(fileChooserPanel);
 		if(retVal==JFileChooser.APPROVE_OPTION && fileChooser.accept(fileChooser.getSelectedFile())==true){
 			File f= fileChooser.getSelectedFile();
-			logger.info("File opened: "+ fileChooser.getSelectedFile().getName());
+			LOGGER.info("Database connected: "+ fileChooser.getSelectedFile().getName());
 			try{
-				if(dbase.conn.isClosed()==false)
+				if(dbase.conn!=null && dbase.conn.isClosed()==false)
 					dbase.conn.close();
 				System.out.println(f.getName());
 				dbase.conn=dbase.getConnection(f.getName());
 				dbase.stat=dbase.conn.createStatement();
 				AbstractModel.conn=dbase.conn;
 				AbstractModel.stat=dbase.stat;
-				sideController.insertTableNames();
+				controller.initialize();
 			}
 			catch(SQLException e)
 			{
-				
+				LOGGER.info("SQL Exception encountered, database connection failed.");
+				e.printStackTrace();
 			}
 			catch(IOException e)
 			{
-				
+				LOGGER.info("IO Exception encountered, database connection failed.");
+				e.printStackTrace();
 			}
 			
 		}
-		
 	}
 }
+
+class TopMenu {
+	private JMenu menu;
+	private JMenuBar menuBar;
+	private JMenuItem menuItem;
+
+	TopMenu(JFrame f, final DatabaseOverviewController controller){
+		menu=new JMenu("menu");
+		menuBar=new JMenuBar();
+		menuItem=new JMenuItem("Polacz z baza danych");
+		menuItem.addActionListener(new ActionListener() {
+			
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				new FileChooser(controller).popupFileChooser();
+			}
+		});
+		menu.add(menuItem);
+		menuBar.add(menu);
+		f.setJMenuBar( menuBar);
+		
+	}
+	
+	
+		
+	}
+
 /*
 class TopBarMenu{
 	JMenuBar menuBar;
@@ -181,7 +190,6 @@ class SidePanel extends JTabbedPane{
 		list.setSelectionMode(ListSelectionModel.SINGLE_INTERVAL_SELECTION);
 		list.setLayoutOrientation(JList.HORIZONTAL_WRAP);
 		list.setVisibleRowCount(-1);
-		
 		listScroll.setMaximumSize(new Dimension(125, 200));
 		listScroll.setMinimumSize (new Dimension (125,200));
 		listScroll.setPreferredSize(listScroll.getMaximumSize());
@@ -211,12 +219,14 @@ public void removeListListener(){
 class TablePanel extends JPanel {
 	private JTable table;
 	private JScrollPane tableScroll;
+	private JPanel buttonContainer;
 	private JButton newRecordButton;
 	private JDialog newRecordDialog;
 	private JButton commitButton;
 	private JButton deleteButton;
 	private JButton filterButton;
 	private JDialog filterDialog;
+	private JButton databaseConnectionButton;
 	private JDialog deleteConfirmationDialog;
 	private JOptionPane deleteConfirmationOptionPane;
 	private JFormattedTextField textFields [];
@@ -227,13 +237,19 @@ class TablePanel extends JPanel {
 		newRecordButton= new JButton("Dodaj nowy rekord");
 		deleteButton=new JButton("Usun zaznaczone rekordy");
 		filterButton= new JButton("Filtry");
-		this.add(filterButton, BorderLayout.SOUTH);
-		this.add(newRecordButton, BorderLayout.NORTH);
-		this.add(deleteButton, BorderLayout.NORTH);
-		frame.add(this,BorderLayout.CENTER);
+		this.setLayout(new BorderLayout());
+		buttonContainer=new JPanel(new GridLayout());
+		buttonContainer.add(filterButton);
+		buttonContainer.add(newRecordButton);
+		buttonContainer.add(deleteButton);
+		this.add(buttonContainer, BorderLayout.NORTH);
+		databaseConnectionButton=new JButton("Polacz z baza danych");
+		
+		//this.add(databaseConnectionButton, BorderLayout.CENTER);
+		frame.add(this);
 		frame.pack();
 	}
-	
+	//getters
 	public JButton getNewRecordButton (){return newRecordButton;}
 	public JButton getCommitButton (){return commitButton;}
 	public JButton getDeleteButton(){return deleteButton;}
@@ -242,7 +258,7 @@ class TablePanel extends JPanel {
 	public JScrollPane getTableScroll(){return tableScroll;} 
 	public JOptionPane getDeleteConfirmationOptionPane(){return deleteConfirmationOptionPane;}
 	public JDialog getDeleteConfirmationDialog(){return deleteConfirmationDialog;}
-	
+	public void removeDatabaseConnectionButton(){this.remove(databaseConnectionButton);}
 	public ArrayList<Object> getInsertedValues(){
 		ArrayList<Object> values= new ArrayList<Object>();
 		for(int i=0; i<textFields.length;++i)
@@ -251,7 +267,7 @@ class TablePanel extends JPanel {
 		}
 		return values;	
 	}
-	
+	//TODO: composite primary keys handling
 	private String createDeleteConfirmationInfo(){
 		StringBuffer buff=new StringBuffer();
 		int selectedRows []=table.getSelectedRows();
@@ -484,7 +500,12 @@ class TablePanel extends JPanel {
 		newRecordDialog.setVisible(true);
 		//newRecordDialog.setPreferredSize(new Dimension(100,200));
 	}
-	
+	/**
+	 * This method creates new table view based on array of table data and column names
+	 * @param data table data in object arrays
+	 * @param columnNames table column names
+	 * @deprecated
+	 */
 	
 	public void createTable(Object [][] data, Object [] columnNames){
 		table= new JTable(data, columnNames);
@@ -495,6 +516,10 @@ class TablePanel extends JPanel {
         tableScroll.repaint();
 		revalidate();
 	}
+	/**
+	 * This method creates new table view with scroll pane and row sorter
+	 * @param editionModel model of table
+	 */
 	public void createTable(TableEditionModel editionModel){
 		filterStrings.clear();
 		table= new JTable(editionModel);
@@ -506,6 +531,19 @@ class TablePanel extends JPanel {
         this.add(tableScroll);
         tableScroll.repaint();
 		revalidate();
+	}
+	
+	public int getColumnIndex(String columnName)
+	{
+		for(int i=0;i<table.getModel().getColumnCount();++i)
+		{
+			System.out.println(table.getModel().getColumnName(i));
+			if(table.getModel().getColumnName(i).toLowerCase().equals(columnName)) //conversion to lower case
+				return i;
+		}
+			
+				
+		return -1;
 	}
 	
 }

@@ -9,10 +9,17 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Time;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.logging.Logger;
 
 import javax.swing.table.AbstractTableModel;
-
+/**
+ * Class Query creates SQL Insert, Update and Delete statements
+ * as strings ready to execute by Statement.execute() method. 
+ * @author Owen
+ * TODO: constructors unification
+ *
+ */
 class Query{
 	public enum MainStatement{
 		UPDATE("UPDATE"),
@@ -30,6 +37,7 @@ class Query{
 	private MainStatement mainStat;
 	private String tableName;
 	private String constraint;
+	//private ArrayList<String> constraints;
 	private ArrayList<Object> values;
 	private ArrayList<String> columns;
 	static Logger logger;
@@ -43,13 +51,27 @@ class Query{
 		values= new ArrayList<Object>();
 		values.add(value);
 	}
+	/**
+	 * 
+	 * @param mainStat
+	 * @param tableName
+	 * @param columns
+	 * @param constraint
+	 */
 	
 	public Query(MainStatement mainStat, String tableName, ArrayList<String> columns, int [] constraint)
 	{
+		if(constraint==null)
+		{
+			logger.info("Unable to create delete statement without constraint.");
+		}
 		this.mainStat=mainStat;
 		this.tableName=tableName;
 		this.columns=columns;
+		if(columns.size()==1)
 		this.constraint=deleteConstraintToString(constraint);
+		else
+			this.constraint=compositeDeleteConstraintToString(constraint);
 	}
 	
 	public Query(MainStatement mainStat, String tableName,ArrayList<String> columns, String constraint, ArrayList<Object> values){
@@ -59,13 +81,50 @@ class Query{
 		this.constraint=constraint;
 		this.values=values;
 	}
-	
+	/**
+	 * Creates a condition of Delete SQL statement by joining given primary keys
+	 * with OR operator.  It can be used only with tables that utilize singular primary key.
+	 * 
+	 * @param constraint an array consisting of primary keys of rows that should be deleted
+	 * @return string that describes deletion condition 
+	 * 
+	 */
 	private String deleteConstraintToString(int [] constraint){
 		StringBuffer buff = new StringBuffer();
+		buff.append(columns.get(0)+ " = ");
 		for(int i=0;i<constraint.length;++i)
 			buff.append(constraint[i]+ " OR ");
 		
 
+		return buff.substring(0, buff.length()-3);
+	}
+	/**
+	 * Creates a condition of Delete SQL statement by 
+	 * .  It can be used only with tables that utilize singular primary key.
+	 * 
+	 * @param constraint an array consisting of primary keys of rows that should be deleted
+	 * @return string that describes deletion condition 
+	 * 
+	 */
+	private String compositeDeleteConstraintToString(int[] constraint)
+	{
+		System.out.println("constraint array length" +constraint.length);
+		System.out.println("columns list size" +columns.size());
+		int rowsToDelete=constraint.length/columns.size();
+		
+		StringBuffer buff = new StringBuffer();
+		
+		for(int i=0;i<rowsToDelete;++i)
+		{
+			buff.append("( ");
+			for(int j=0;j<columns.size();++j)
+			{
+				buff.append(columns.get(j)+" = "+constraint[j+i*columns.size()]+" AND " );
+			}
+			buff.setLength(buff.length()-4);
+			buff.append(") OR ");
+		}
+		
 		return buff.substring(0, buff.length()-3);
 	}
 	
@@ -108,7 +167,7 @@ class Query{
 		switch(mainStat){
 		case DELETE:
 		{
-			queryString=mainStat.toString()+" "+tableName+" WHERE "+columns.get(0)+" = " +constraint;
+			queryString=mainStat.toString()+" "+tableName+" WHERE "+constraint;
 			break;
 		}
 		case INSERT:
@@ -132,12 +191,16 @@ class Query{
 		}
 		return queryString;
 	}
-	
+	//TODO: create distinct abstract class for parsing
 	public static Object parseColumnType(String columnTypeName){
 		
 		switch(columnTypeName)
 		{
 		case "INTEGER":
+		{
+			return new Integer(0);
+		}
+		case "INT":
 		{
 			return new Integer(0);
 		}
@@ -155,6 +218,7 @@ class Query{
 		}
 		case "DATE":
 		{
+			//TODO: check of database date format
 			return new Date(System.currentTimeMillis());
 		}
 		case "TIME":
@@ -178,25 +242,40 @@ class Query{
 abstract class AbstractModel{
 	static Statement stat;
 	static Connection conn;
-	static Logger logger;
 }
 
- class DatabaseTableModel extends AbstractModel{
+interface TableModel{
+	String getTableName();
+	void setTableName(String name);
+	Collection<? extends Object> getTableData();
+	Collection<String> getPrimaryKeyColumns();
+	int getPrimaryKeyColumnsCount();
+	Collection<String> getColumnNames();
+	Collection<String> getColumnClasses();
+	void executeQuery(String query);
+}
+
+ class DefaultTableModel extends AbstractModel implements Loggable, TableModel{
 	private String tableName;
-	private ArrayList<Integer> primaryKeyColumns;
-	public DatabaseTableModel(String tableName){
+	private ArrayList<String> primaryKeyColumns=new ArrayList<String>();
+	private ArrayList<String> foreignKeyColumns= new ArrayList<String>();
+
+	public DefaultTableModel(String tableName){
 		this.tableName=tableName;
-		primaryKeyColumns=new ArrayList<Integer>();
-		//primaryKeyColumns=getPrimaryKeyColumns();
-		for(int i=0;i<primaryKeyColumns.size();++i)
-			System.out.println(primaryKeyColumns.get(i));
+		fetchPrimaryKeyColumns();
+		fetchForeignKeyColumns();
+	}
+	
+	public DefaultTableModel(){
+		
 	}
 	
 	public String getTableName(){return this.tableName;};
 	
 	public void setTableName(String tableName){
-		primaryKeyColumns.clear();
-		this.tableName=tableName;}
+		this.tableName=tableName;
+		fetchPrimaryKeyColumns();
+		fetchForeignKeyColumns();}
 	/*
 	public static int getTableSize(Statement stat, String name)
 	{
@@ -214,27 +293,61 @@ abstract class AbstractModel{
 		return size;
 	}
 	*/
-	private ArrayList<Integer> getPrimaryKeyColumns(){
+	
+	
+	/**
+	 * This method retrieves primary key columns from database meta data
+	 * and stores their names in primaryKeyColumns field.
+	 * GetPrimaryKeys function seems to return primary key column names WITHOUT capital letters, so
+	 * comparison with any column name present in this application usually requires proper conversion. 
+	 */
+	private void fetchPrimaryKeyColumns(){
 		ResultSet result;
-		ArrayList<Integer> list = new ArrayList<Integer>();
+		primaryKeyColumns.clear();
 		try {
 			DatabaseMetaData meta = conn.getMetaData();
 			result=meta.getPrimaryKeys(null, null, tableName);
 			result.next();
-			int i=0;
 			while(result.isAfterLast()==false)
 			{
-				System.out.println(result.getInt(i));
-				list.add(result.getInt(i));
+				System.out.println("primary key column: "+result.getString(4));
+				primaryKeyColumns.add(result.getString(4));
 				result.next();
-				++i;
 			}
 		} catch (SQLException e) {
-			//System.out.println("Nie mozna wyswietlic zawartosci tablicy o nazwie: "+model.tableName);
+			LOGGER.info("SQL Error encountered when fetching Primary Keys of "+tableName);
 			e.printStackTrace();
 		}
 		
-		return list;
+		return;
+	}
+	
+	public ArrayList<String> getPrimaryKeyColumns(){return primaryKeyColumns;}
+	public int getPrimaryKeyColumnsCount(){return primaryKeyColumns.size();}
+	/**
+	 * This method retrieves foreign key columns from database meta data
+	 * and stores their names in foreignKeyColumns field.
+	 */
+	
+	private void fetchForeignKeyColumns(){
+		ResultSet result;
+		foreignKeyColumns.clear();
+		try {
+			DatabaseMetaData meta = conn.getMetaData();
+			result=meta.getImportedKeys(null, null, tableName);
+			result.next();
+			while(result.isAfterLast()==false)
+			{
+				System.out.println("foreign key column: "+result.getString(8));
+				foreignKeyColumns.add(result.getString(8));
+				result.next();
+			}
+		} catch (SQLException e) {
+			LOGGER.info("SQL Error encountered when fetching Foreign Keys of "+tableName);
+			e.printStackTrace();
+		}
+		
+		return;
 	}
 	
 	public ArrayList<String> getColumnNames(){
@@ -248,7 +361,6 @@ abstract class AbstractModel{
 			System.out.print(" ");
 			for(int i=1;i<=meta.getColumnCount();++i)
 			{
-				//System.out.format("%1s%15s%1s","|",meta.getColumnLabel(i),"|");
 				list.add(meta.getColumnLabel(i));
 			}
 			result.close();
@@ -283,7 +395,10 @@ abstract class AbstractModel{
 		return list;
 
 	}
-	
+	/**
+	 * This method retrieves data of table defined by tableName field of DatabaseTableModel
+	 * @return table data as ArrayList of ArrayLists
+	 */
 	public ArrayList<ArrayList<Object>> getTableData(){
 		ResultSet result;
 		ArrayList<ArrayList<Object>> data= new ArrayList<ArrayList<Object>>();
@@ -313,20 +428,27 @@ abstract class AbstractModel{
 		
 		return data;
 	}
-	
+	/**
+	 * This method executes statement generated by Query class
+	 */
 	public void executeQuery(String query){
 		try {
 			stat.execute(query);
-			logger.info("Query Executed: "+query);
+			LOGGER.info("Query Executed: "+query);
 		} catch (SQLException e) {
-			//System.out.println("Nie mozna wyswietlic zawartosci tablicy o nazwie: "+model.tableName);
-			logger.warning("Following query cannot be executed: "+query);
+			LOGGER.warning("Query: "+query+" cannot be executed.");
 			e.printStackTrace();
 		}
 	}
 	
  }
-
+/**
+ * Class SidePanelModel is responsible for fetching and storing information about 
+ * tables and views in database 
+ * TODO: security restrictions, stored procedures and functions
+ * @author Owen
+ *
+ */
 class SidePanelModel extends AbstractModel{
 	private ArrayList<String> tableNames;
 	private ArrayList<String> viewNames;
@@ -378,12 +500,17 @@ class SidePanelModel extends AbstractModel{
 	public ArrayList<String> getViewNames(){return viewNames;}
 	public String getViewName(int index){return viewNames.get(index);}
 } 
-
+/**
+ * Class TableEditionModel is customised AbstracTableModel class of JTable view (table in TablePanel class)
+ * linked DatabaseTableModel allows performing Update statements on table by overrided setValueAt method
+ * @author Owen
+ *
+ */
 class TableEditionModel extends AbstractTableModel{
 	private String[] columnNames;
 	private Object [][] data;
-	DatabaseTableModel dbTableModel;
-	public TableEditionModel(Object [][] data, String[] columnNames, DatabaseTableModel dbTableModel) {
+	DefaultTableModel dbTableModel;
+	public TableEditionModel(Object [][] data, String[] columnNames, DefaultTableModel dbTableModel) {
 		this.data=data;
 		this.columnNames=columnNames;
 		this.dbTableModel=dbTableModel;
@@ -418,6 +545,11 @@ class TableEditionModel extends AbstractTableModel{
 		}
 		return getValueAt(0, column).getClass();
 	}
+	/**
+	 * This method is called whenever any field of table is updated. It creates and executes
+	 *  appropriate update statement.
+	 *  TODO: security checks, composite primary keys handling
+	 */
 	public void setValueAt(Object value, int row, int col) {
 		if(value.equals(data[row][col])==false)
 		{
