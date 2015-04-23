@@ -10,17 +10,19 @@ import java.sql.Statement;
 import java.sql.Time;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.logging.Logger;
 
 import javax.swing.table.AbstractTableModel;
+
+import sqliteDB.Query.MainStatement;
 /**
  * Class Query creates SQL Insert, Update and Delete statements
  * as strings ready to execute by Statement.execute() method. 
  * @author Owen
  * TODO: constructors unification
- *
  */
-class Query{
+class Query implements Loggable{
 	public enum MainStatement{
 		UPDATE("UPDATE"),
 		INSERT("INSERT INTO"),
@@ -34,23 +36,16 @@ class Query{
 		}
 		public String toString(){return string;}
 	};
-	private MainStatement mainStat;
-	private String tableName;
-	private String constraint;
+	protected MainStatement mainStat;
+	protected String tableName;
+	protected String condition;
+	/**
+	 * Defines which column should be updated on Update command.
+	 */
+	protected String updateColumn;
 	//private ArrayList<String> constraints;
-	private ArrayList<Object> values;
-	private ArrayList<String> columns;
-	static Logger logger;
-	
-	public Query(MainStatement mainStat, String tableName,String column, String constraint, Object value){
-		this.mainStat=mainStat;
-		this.tableName=tableName;
-		columns = new ArrayList<String>();
-		columns.add(column);
-		this.constraint=constraint;
-		values= new ArrayList<Object>();
-		values.add(value);
-	}
+	protected ArrayList<Object> values;
+	protected ArrayList<String> columns;
 	/**
 	 * 
 	 * @param mainStat
@@ -58,59 +53,107 @@ class Query{
 	 * @param columns
 	 * @param constraint
 	 */
+
 	
-	public Query(MainStatement mainStat, String tableName, ArrayList<String> columns, int [] constraint)
+	//TODO: constructor renaming?
+	
+	//DELETE
+	public Query(MainStatement mainStat, String tableName, ArrayList<String> columns, int [] condition)
 	{
-		if(constraint==null)
-		{
-			logger.info("Unable to create delete statement without constraint.");
-		}
+		if(mainStat==null || tableName==null || columns==null || condition ==null)
+			throw new IllegalArgumentException("None of Query constructor arguments can be null.");
+		if(columns.size()>condition.length)
+			throw new IllegalArgumentException("Number of composite primary key columns cannot exceed the number of provided primary keys.");
+		if(columns.size()==0 ||condition.length==0)
+			throw new IllegalArgumentException("At least one column name and condition value must be provided.");
 		this.mainStat=mainStat;
 		this.tableName=tableName;
 		this.columns=columns;
 		if(columns.size()==1)
-		this.constraint=deleteConstraintToString(constraint);
+			this.condition=singularKeyConditionToString(condition);
 		else
-			this.constraint=compositeDeleteConstraintToString(constraint);
+			this.condition=compositeKeyConditionToString(condition);
 	}
 	
-	public Query(MainStatement mainStat, String tableName,ArrayList<String> columns, String constraint, ArrayList<Object> values){
+	//INSERT
+	
+	/**
+	 * Creates singular insert command. Count of columns must be equal to the count of values.
+	 * @param mainStat
+	 * @param tableName
+	 * @param columns
+	 * @param values
+	 */
+	public Query(MainStatement mainStat, String tableName,ArrayList<String> columns,ArrayList<Object> values){
+		if(mainStat==null || tableName==null || columns==null || values==null)
+			throw new IllegalArgumentException("None of Query constructor arguments can be null.");
+		if(columns.size()!=values.size())
+			throw new IllegalArgumentException("Count of columns must be equal to the count of values.");
+		if(columns.size()==0 && values.size()==0)
+			throw new IllegalArgumentException("Count of columns and values must be greater than zero.");
 		this.mainStat=mainStat;
 		this.tableName=tableName;
 		this.columns=columns;
-		this.constraint=constraint;
+		this.condition="";
 		this.values=values;
 	}
+	
+	//UPDATE
+	public Query(MainStatement mainStat, String tableName, ArrayList<String> columns,
+			int [] condition, Object value, String updateColumn) {
+		if(mainStat==null || tableName==null || columns==null || condition==null || value==null || updateColumn==null)
+			throw new IllegalArgumentException("None of Query constructor arguments can be null.");
+		//TODO:length check
+		if(condition.length==0)
+			throw new IllegalArgumentException("Condition primary keys must be provided.");
+		this.mainStat=mainStat;
+		this.tableName=tableName;
+		this.columns=columns;
+		this.updateColumn=updateColumn;
+		if(columns.size()==1)
+			this.condition=singularKeyConditionToString(condition);
+		else
+			this.condition=compositeKeyConditionToString(condition);
+		values=new ArrayList<Object>();
+		this.values.add(value);
+	}
+	
+	
+
 	/**
-	 * Creates a condition of Delete SQL statement by joining given primary keys
+	 * Creates a condition of Delete/Update SQL statement by joining given primary keys
 	 * with OR operator.  It can be used only with tables that utilize singular primary key.
 	 * 
-	 * @param constraint an array consisting of primary keys of rows that should be deleted
+	 * @param condition an array consisting of primary keys of rows that should be deleted
 	 * @return string that describes deletion condition 
 	 * 
 	 */
-	private String deleteConstraintToString(int [] constraint){
+	protected String singularKeyConditionToString(int [] condition){
 		StringBuffer buff = new StringBuffer();
 		buff.append(columns.get(0)+ " = ");
-		for(int i=0;i<constraint.length;++i)
-			buff.append(constraint[i]+ " OR ");
+		for(int i=0;i<condition.length;++i)
+			buff.append(condition[i]+ " OR ");
 		
 
 		return buff.substring(0, buff.length()-3);
 	}
 	/**
-	 * Creates a condition of Delete SQL statement by 
-	 * .  It can be used only with tables that utilize singular primary key.
+	 * Creates a condition of Delete/Update SQL statement. Primary keys in constraint array
+	 * must be organized in the following schema: indices of keys of 
+	 * first composite primary key column must satisfy equation index % constraint.length == 0,
+	 * indices of second column must satisfy equation index % constraint.length == 1, and so on.
 	 * 
-	 * @param constraint an array consisting of primary keys of rows that should be deleted
+	 *  It can be used only with tables that utilize composite primary key.
+	 * 
+	 * @param condition an array consisting of primary keys of rows that should be deleted
 	 * @return string that describes deletion condition 
 	 * 
 	 */
-	private String compositeDeleteConstraintToString(int[] constraint)
+	protected String compositeKeyConditionToString(int[] condition)
 	{
-		System.out.println("constraint array length" +constraint.length);
+		System.out.println("constraint array length" +condition.length);
 		System.out.println("columns list size" +columns.size());
-		int rowsToDelete=constraint.length/columns.size();
+		int rowsToDelete=condition.length/columns.size();
 		
 		StringBuffer buff = new StringBuffer();
 		
@@ -119,7 +162,7 @@ class Query{
 			buff.append("( ");
 			for(int j=0;j<columns.size();++j)
 			{
-				buff.append(columns.get(j)+" = "+constraint[j+i*columns.size()]+" AND " );
+				buff.append(columns.get(j)+" = "+condition[j+i*columns.size()]+" AND " );
 			}
 			buff.setLength(buff.length()-4);
 			buff.append(") OR ");
@@ -128,7 +171,7 @@ class Query{
 		return buff.substring(0, buff.length()-3);
 	}
 	
-	private String columnArrayListToString(){
+	protected String columnArrayListToString(){
 		StringBuffer buff;
 		buff=new StringBuffer();
 		for(int i=0;i<columns.size();++i)
@@ -139,7 +182,7 @@ class Query{
 		
 	}
 	
-	private String valuesArrayListToString()
+	protected String valuesArrayListToString()
 	{
 		StringBuffer buff;
 		buff=new StringBuffer();
@@ -165,75 +208,72 @@ class Query{
 	public String createQueryString(){
 		String queryString = null;
 		switch(mainStat){
-		case DELETE:
-		{
-			queryString=mainStat.toString()+" "+tableName+" WHERE "+constraint;
-			break;
-		}
-		case INSERT:
-		{
-			queryString=mainStat.toString()+" "+tableName+" ("+columnArrayListToString()+")"+ " VALUES " + " ("+
-					valuesArrayListToString()+")";
-			break;
-		}
-		case SELECT:
-		{
-			break;
-		}
-		case UPDATE:
-		{
-			queryString=mainStat.toString()+" "+tableName+" SET " +columnArrayListToString()+"=" +valuesArrayListToString()+ " WHERE "+constraint;
-			break;
-		}
-		default:
-			break;
-		
+			case DELETE:
+			{
+				
+				queryString=mainStat.toString()+" "+tableName+" WHERE "+condition;
+				break;
+			}
+			case INSERT:
+			{
+				queryString=mainStat.toString()+" "+tableName+" ("+columnArrayListToString()+")"+ " VALUES " + " ("+
+						valuesArrayListToString()+")";
+				break;
+			}
+			case UPDATE:
+			{
+				queryString=mainStat.toString()+" "+tableName+" SET " +updateColumn+"=" +valuesArrayListToString()+ " WHERE "+condition;
+				break;
+			}
+			default:
+				break;
+			
 		}
 		return queryString;
 	}
-	//TODO: create distinct abstract class for parsing
+	//TODO: create distinct abstract class for parsing?
 	public static Object parseColumnType(String columnTypeName){
 		
 		switch(columnTypeName)
 		{
-		case "INTEGER":
-		{
-			return new Integer(0);
-		}
-		case "INT":
-		{
-			return new Integer(0);
-		}
-		case "DECIMAL":
-		{
-			return new Double(0);
-		}
-		case "CHAR":
-		{
-			return new String();
-		}
-		case "VARCHAR":
-		{
-			return new String();
-		}
-		case "DATE":
-		{
-			//TODO: check of database date format
-			return new Date(System.currentTimeMillis());
-		}
-		case "TIME":
-		{
-			return new Time(System.currentTimeMillis());
-		}
-		case "BIT":
-		{
-			return new Boolean(false);
-		}
-		default:
-		{
-			logger.info("Column type: "+columnTypeName+" unrecognizable, parsing to String.");
-			return new String();
-		}
+			case "INTEGER":
+			{
+				return new Integer(0);
+			}
+			case "INT":
+			{
+				return new Integer(0);
+			}
+			case "DECIMAL":
+			{
+				return new Double(0);
+			}
+			case "CHAR":
+			{
+				return new String();
+			}
+			case "VARCHAR":
+			{
+				return new String();
+			}
+			case "DATE":
+			{
+				//TODO: check of database date format
+				return new Date(System.currentTimeMillis());
+			}
+			case "TIME":
+			{
+				return new Time(System.currentTimeMillis());
+			}
+			case "BIT":
+			{
+				return new Boolean(false);
+			}
+			default:
+			{
+				LOGGER.info("Column type: "+columnTypeName+" unrecognizable, parsing to String.");
+				return new String();
+			}
 		}
 	}
 }
@@ -243,14 +283,26 @@ abstract class AbstractModel{
 	static Statement stat;
 	static Connection conn;
 }
-
+/**
+ * TableModel interface prototype. TableModel is responsible for fetching table data from database.
+ * @author Owen
+ *
+ */
 interface TableModel{
 	String getTableName();
 	void setTableName(String name);
 	Collection<? extends Object> getTableData();
+	
+	/**
+	 * @return Collection of names of primary key columns.
+	 */
 	Collection<String> getPrimaryKeyColumns();
 	int getPrimaryKeyColumnsCount();
-	Collection<String> getColumnNames();
+	List<String> getColumnNames();
+	
+	/**
+	 * @return Collection of names of columns classes.
+	 */
 	Collection<String> getColumnClasses();
 	void executeQuery(String query);
 }
@@ -275,80 +327,13 @@ interface TableModel{
 	public void setTableName(String tableName){
 		this.tableName=tableName;
 		fetchPrimaryKeyColumns();
-		fetchForeignKeyColumns();}
-	/*
-	public static int getTableSize(Statement stat, String name)
-	{
-		ResultSet result;
-		int size=0;
-		try {
-			result = stat.executeQuery("SELECT COUNT(*) FROM "+name);
-			result.next();
-			size=(result.getInt(1));
-			result.close();
-		} catch (SQLException e) {
-			e.printStackTrace();
-		}
-		
-		return size;
+		fetchForeignKeyColumns();
 	}
-	*/
 	
-	
-	/**
-	 * This method retrieves primary key columns from database meta data
-	 * and stores their names in primaryKeyColumns field.
-	 * GetPrimaryKeys function seems to return primary key column names WITHOUT capital letters, so
-	 * comparison with any column name present in this application usually requires proper conversion. 
-	 */
-	private void fetchPrimaryKeyColumns(){
-		ResultSet result;
-		primaryKeyColumns.clear();
-		try {
-			DatabaseMetaData meta = conn.getMetaData();
-			result=meta.getPrimaryKeys(null, null, tableName);
-			result.next();
-			while(result.isAfterLast()==false)
-			{
-				System.out.println("primary key column: "+result.getString(4));
-				primaryKeyColumns.add(result.getString(4));
-				result.next();
-			}
-		} catch (SQLException e) {
-			LOGGER.info("SQL Error encountered when fetching Primary Keys of "+tableName);
-			e.printStackTrace();
-		}
-		
-		return;
-	}
 	
 	public ArrayList<String> getPrimaryKeyColumns(){return primaryKeyColumns;}
 	public int getPrimaryKeyColumnsCount(){return primaryKeyColumns.size();}
-	/**
-	 * This method retrieves foreign key columns from database meta data
-	 * and stores their names in foreignKeyColumns field.
-	 */
 	
-	private void fetchForeignKeyColumns(){
-		ResultSet result;
-		foreignKeyColumns.clear();
-		try {
-			DatabaseMetaData meta = conn.getMetaData();
-			result=meta.getImportedKeys(null, null, tableName);
-			result.next();
-			while(result.isAfterLast()==false)
-			{
-				System.out.println("foreign key column: "+result.getString(8));
-				foreignKeyColumns.add(result.getString(8));
-				result.next();
-			}
-		} catch (SQLException e) {
-			LOGGER.info("SQL Error encountered when fetching Foreign Keys of "+tableName);
-			e.printStackTrace();
-		}
-		
-		return;
-	}
 	
 	public ArrayList<String> getColumnNames(){
 		ResultSet result;
@@ -358,14 +343,13 @@ interface TableModel{
 			ResultSetMetaData meta=result.getMetaData();
 			result.next();
 
-			System.out.print(" ");
 			for(int i=1;i<=meta.getColumnCount();++i)
 			{
 				list.add(meta.getColumnLabel(i));
 			}
 			result.close();
 		} catch (SQLException e) {
-			//System.out.println("Nie mozna wyswietlic zawartosci tablicy o nazwie: "+model.tableName);
+			LOGGER.warning("SQL Error encountered when fetching "+tableName+" column names.");
 			e.printStackTrace();
 		}
 		
@@ -381,14 +365,12 @@ interface TableModel{
 			result.next();
 
 			System.out.print(" ");
-			for(int i=1;i<=meta.getColumnCount();++i)
-			{
-				//System.out.format("%1s%15s%1s","|",meta.getColumnLabel(i),"|");
+			for(int i=1;i<=meta.getColumnCount();++i){
 				list.add(meta.getColumnTypeName(i));
 			}
 			result.close();
 		} catch (SQLException e) {
-			//System.out.println("Nie mozna wyswietlic zawartosci tablicy o nazwie: "+model.tableName);
+			LOGGER.warning("SQL Error encountered when fetching "+tableName+" column classes.");
 			e.printStackTrace();
 		}
 		
@@ -396,8 +378,8 @@ interface TableModel{
 
 	}
 	/**
-	 * This method retrieves data of table defined by tableName field of DatabaseTableModel
-	 * @return table data as ArrayList of ArrayLists
+	 * This method retrieves data of table defined by tableName field of DefaultTableModel
+	 * @return table data as ArrayList of ArrayLists of Objects
 	 */
 	public ArrayList<ArrayList<Object>> getTableData(){
 		ResultSet result;
@@ -413,7 +395,6 @@ interface TableModel{
 				for(int i=1;i<=meta.getColumnCount();++i)
 				temp.add(result.getObject(i));
 				
-				
 				data.add(temp);
 				temp= new ArrayList<Object>();
 				
@@ -421,8 +402,7 @@ interface TableModel{
 			}
 			result.close();
 		} catch (SQLException e) {
-			System.out.println("Nie mozna odczytac zawartosci tablicy o nazwie: "+tableName);
-			System.out.println(e.getMessage());
+			LOGGER.warning("SQL Error encountered when fetching "+tableName+" data.");
 			e.printStackTrace();
 		}
 		
@@ -441,15 +421,65 @@ interface TableModel{
 		}
 	}
 	
+	/**
+	 * This method retrieves foreign key columns from database meta data
+	 * and stores their names in foreignKeyColumns field.
+	 */
+	private void fetchForeignKeyColumns(){
+		ResultSet result;
+		foreignKeyColumns.clear();
+		try {
+			DatabaseMetaData meta = conn.getMetaData();
+			result=meta.getImportedKeys(null, null, tableName);
+			result.next();
+			while(result.isAfterLast()==false)
+			{
+				System.out.println("foreign key column: "+result.getString(8));
+				foreignKeyColumns.add(result.getString(8));
+				result.next();
+			}
+		} catch (SQLException e) {
+			LOGGER.warning("SQL Error encountered when fetching Foreign Keys of "+tableName);
+			e.printStackTrace();
+		}
+		
+		return;
+	}
+	
+	/**
+	 * This method retrieves primary key columns from database meta data
+	 * and stores their names in primaryKeyColumns field.
+	 * JDBC GetPrimaryKeys function seems to return primary key column names WITHOUT capital letters, so
+	 * comparison with any column name present in this application usually requires proper conversion. 
+	 */
+	private void fetchPrimaryKeyColumns(){
+		ResultSet result;
+		primaryKeyColumns.clear();
+		try {
+			DatabaseMetaData meta = conn.getMetaData();
+			result=meta.getPrimaryKeys(null, null, tableName);
+			result.next();
+			while(result.isAfterLast()==false)
+			{
+				primaryKeyColumns.add(result.getString(4));
+				result.next();
+			}
+		} catch (SQLException e) {
+			LOGGER.warning("SQL Error encountered when fetching Primary Keys of "+tableName);
+			e.printStackTrace();
+		}
+		
+		return;
+	}
+	
  }
 /**
  * Class SidePanelModel is responsible for fetching and storing information about 
  * tables and views in database 
- * TODO: security restrictions, stored procedures and functions
  * @author Owen
  *
  */
-class SidePanelModel extends AbstractModel{
+class SidePanelModel extends AbstractModel implements Loggable{
 	private ArrayList<String> tableNames;
 	private ArrayList<String> viewNames;
 	public SidePanelModel(){
@@ -470,6 +500,7 @@ class SidePanelModel extends AbstractModel{
 			}
 			result.close();
 		} catch (SQLException e) {
+			LOGGER.warning("SQL Error encountered when fetching table names.");
 			e.printStackTrace();
 		}
 
@@ -488,6 +519,7 @@ class SidePanelModel extends AbstractModel{
 			}
 			result.close();
 		} catch (SQLException e) {
+			LOGGER.warning("SQL Error encountered when fetching view names.");
 			e.printStackTrace();
 		}
 
@@ -501,15 +533,15 @@ class SidePanelModel extends AbstractModel{
 	public String getViewName(int index){return viewNames.get(index);}
 } 
 /**
- * Class TableEditionModel is customised AbstracTableModel class of JTable view (table in TablePanel class)
- * linked DatabaseTableModel allows performing Update statements on table by overrided setValueAt method
+ * Class TableEditionModel is customized AbstracTableModel class of JTable view (table in TablePanel class)
+ * linked DatabaseTableModel allows performing Update statements on table by overridden setValueAt method
  * @author Owen
  *
  */
 class TableEditionModel extends AbstractTableModel{
 	private String[] columnNames;
 	private Object [][] data;
-	DefaultTableModel dbTableModel;
+	private DefaultTableModel dbTableModel;
 	public TableEditionModel(Object [][] data, String[] columnNames, DefaultTableModel dbTableModel) {
 		this.data=data;
 		this.columnNames=columnNames;
@@ -545,21 +577,41 @@ class TableEditionModel extends AbstractTableModel{
 		}
 		return getValueAt(0, column).getClass();
 	}
+	
+	
+	private int[] getPrimaryKeysValues(int row)
+	{
+		ArrayList<String> primaryColumns=dbTableModel.getPrimaryKeyColumns();
+
+		
+		int [] pKeys= new int [primaryColumns.size()];
+		
+		for(int i=0; i<data[0].length;++i)
+			for(int j=0; j< primaryColumns.size(); ++j)
+			{
+				//Lower case conversion needed
+				if(getColumnName(i).toLowerCase().equals(primaryColumns.get(j)))
+					pKeys[i]=(int) getValueAt(row, i);
+			}
+				
+		return pKeys;
+			
+	}
+	
 	/**
 	 * This method is called whenever any field of table is updated. It creates and executes
 	 *  appropriate update statement.
-	 *  TODO: security checks, composite primary keys handling
+	 *  
 	 */
 	public void setValueAt(Object value, int row, int col) {
 		if(value.equals(data[row][col])==false)
 		{
+			getPrimaryKeysValues(row);
+			Query query= new Query(Query.MainStatement.UPDATE, dbTableModel.getTableName() ,
+	        		dbTableModel.getPrimaryKeyColumns(), getPrimaryKeysValues(row),value, getColumnName(col));
+			dbTableModel.executeQuery(query.createQueryString());
 			data[row][col] = value;
 	        fireTableCellUpdated(row, col);
-	        //System.out.println("Cell ["+row+"]["+col+"] value changed to "+value.toString());
-	        Query query= new Query(Query.MainStatement.UPDATE,
-	        		dbTableModel.getTableName(),getColumnName(col), columnNames[0].toString()+"="+(row+1),value);
-	      //  System.out.println(query.createQueryString());
-	        dbTableModel.executeQuery(query.createQueryString());
 		}
         
     }

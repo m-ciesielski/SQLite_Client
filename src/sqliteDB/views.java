@@ -1,6 +1,7 @@
 package sqliteDB;
 
 import java.awt.BorderLayout;
+import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.GridLayout;
 import java.awt.Point;
@@ -68,6 +69,7 @@ class FileChooser implements Loggable{
 				System.out.println(f.getName());
 				dbase.conn=dbase.getConnection(f.getName());
 				dbase.stat=dbase.conn.createStatement();
+				dbase.connected=true;
 				AbstractModel.conn=dbase.conn;
 				AbstractModel.stat=dbase.stat;
 				controller.initialize();
@@ -111,59 +113,8 @@ class TopMenu {
 	
 	
 		
-	}
-
-/*
-class TopBarMenu{
-	JMenuBar menuBar;
-	JMenu menu, submenu;
-	JMenuItem menuItem;
-	
-	TopBarMenu(JFrame frame)
-	{
-		//Create the menu bar.
-		menuBar = new JMenuBar();
-
-		//Build the first menu.
-		menu = new JMenu("A Menu");
-		menu.setMnemonic(KeyEvent.VK_A);
-		menu.getAccessibleContext().setAccessibleDescription(
-		        "The only menu in this program that has menu items");
-		menuBar.add(menu);
-
-		//a group of JMenuItems
-		menuItem = new JMenuItem("A text-only menu item",
-		                         KeyEvent.VK_T);
-		menuItem.setAccelerator(KeyStroke.getKeyStroke(
-		        KeyEvent.VK_1, ActionEvent.ALT_MASK));
-		menuItem.getAccessibleContext().setAccessibleDescription(
-		        "This doesn't really do anything");
-		menu.add(menuItem);
-		
-		menu.addSeparator();
-		submenu = new JMenu("A submenu");
-		submenu.setMnemonic(KeyEvent.VK_S);
-
-		menuItem = new JMenuItem("An item in the submenu");
-		menuItem.setAccelerator(KeyStroke.getKeyStroke(
-		        KeyEvent.VK_2, ActionEvent.ALT_MASK));
-		submenu.add(menuItem);
-
-		menuItem = new JMenuItem("Another item");
-		submenu.add(menuItem);
-		menu.add(submenu);
-
-		//Build second menu in the menu bar.
-		menu = new JMenu("Another Menu");
-		menu.setMnemonic(KeyEvent.VK_N);
-		menu.getAccessibleContext().setAccessibleDescription(
-		        "This menu does nothing");
-		menuBar.add(menu);
-		
-		frame.setJMenuBar(menuBar);
-	}
 }
-*/
+
 class SidePanel extends JTabbedPane{
 	private JList<String> list;
 	private DefaultListModel <String> listModel;
@@ -227,8 +178,8 @@ class TablePanel extends JPanel {
 	private JButton filterButton;
 	private JDialog filterDialog;
 	private JButton databaseConnectionButton;
-	private JDialog deleteConfirmationDialog;
-	private JOptionPane deleteConfirmationOptionPane;
+	private JDialog deleteDialog;
+	private JOptionPane deleteOptionPane;
 	private JFormattedTextField textFields [];
 	private TableRowSorter<TableModel> sorter;
 	private ArrayList<String> filterStrings;
@@ -254,11 +205,14 @@ class TablePanel extends JPanel {
 	public JButton getCommitButton (){return commitButton;}
 	public JButton getDeleteButton(){return deleteButton;}
 	public JButton getFilterButton(){return filterButton;}
+	public JDialog getFilterDialog(){return filterDialog;}
 	public JTable getTable(){return table;} 
 	public JScrollPane getTableScroll(){return tableScroll;} 
-	public JOptionPane getDeleteConfirmationOptionPane(){return deleteConfirmationOptionPane;}
-	public JDialog getDeleteConfirmationDialog(){return deleteConfirmationDialog;}
+	public JOptionPane getDeleteOptionPane(){return deleteOptionPane;}
+	public JDialog getDeleteDialog(){return deleteDialog;}
+	
 	public void removeDatabaseConnectionButton(){this.remove(databaseConnectionButton);}
+	
 	public ArrayList<Object> getInsertedValues(){
 		ArrayList<Object> values= new ArrayList<Object>();
 		for(int i=0; i<textFields.length;++i)
@@ -267,16 +221,13 @@ class TablePanel extends JPanel {
 		}
 		return values;	
 	}
-	//TODO: composite primary keys handling
+	
 	private String createDeleteConfirmationInfo(){
 		StringBuffer buff=new StringBuffer();
 		int selectedRows []=table.getSelectedRows();
 		for(int i=0;i<selectedRows.length;++i)
 		{
-			if(table.getValueAt(selectedRows[i], 0).getClass()==Integer.class)
-			selectedRows[i]=(int)table.getValueAt(selectedRows[i], 0);
-			//selectedRows[i]=table.convertRowIndexToModel(selectedRows[i]);
-			buff.append(selectedRows[i]+", ");
+			buff.append((selectedRows[i]+1)+", ");
 		}
 		return buff.toString();
 	}
@@ -308,25 +259,31 @@ class TablePanel extends JPanel {
 	}
 	public void popupFilterDialog(final ArrayList<String> columnTypes){
 		filterDialog= new JDialog();
+		
 		JPanel textFieldPanel;
 		JPanel labelPanel;
 		JPanel buttonPanel;
 		JButton applyButton;
 		JButton cancelButton;
 		JButton clearButton;
+		
 		labelPanel=new JPanel(new GridLayout(0,1));
 		textFieldPanel=new JPanel(new GridLayout(0,1));
 		buttonPanel=new JPanel(new GridLayout(1,0));
 		applyButton=new JButton("Zatwierdz");
 		cancelButton=new JButton("Anuluj");
 		clearButton=new JButton("Usun Filtry");
+		
 		buttonPanel.add(applyButton);
 		buttonPanel.add(clearButton);
 		buttonPanel.add(cancelButton);
+		
 		final JTextField filterTextFields [];
 		JLabel labels [];
+		
 		labels= new JLabel[table.getColumnCount()];
 		filterTextFields = new JTextField[table.getColumnCount()];
+		
 		for(int i=0; i<table.getColumnCount();++i)
 		{
 			filterTextFields[i]=new JTextField();
@@ -438,20 +395,22 @@ class TablePanel extends JPanel {
 		filterDialog.add(buttonPanel, BorderLayout.SOUTH);
 		filterDialog.setSize(new Dimension(200,300));
 		filterDialog.setLocation(new Point(100,100));
+		filterDialog.pack();
 		filterDialog.setVisible(true);
 	}
 	
 	public void popupDeleteConfirmationDialog(){
-		deleteConfirmationDialog=new JDialog();
-		deleteConfirmationOptionPane = new JOptionPane(
-			    "Zostana usuniete rekordy o id: \n"+
+		deleteDialog=new JDialog();
+		deleteOptionPane = new JOptionPane(
+			    "Zostana usuniête rekordy o numerach: \n"+
 			    createDeleteConfirmationInfo(),
 			    JOptionPane.WARNING_MESSAGE,
 			    JOptionPane.OK_CANCEL_OPTION);
-		deleteConfirmationDialog.add(deleteConfirmationOptionPane);
-		deleteConfirmationDialog.setSize(new Dimension(200,300));
-		deleteConfirmationDialog.setLocation(new Point(100,100));
-		deleteConfirmationDialog.setVisible(true);
+		deleteDialog.add(deleteOptionPane);
+		deleteDialog.setSize(new Dimension(200,300));
+		deleteDialog.setLocation(new Point(100,100));
+		deleteDialog.pack();
+		deleteDialog.setVisible(true);
 	}
 	
 
@@ -497,6 +456,7 @@ class TablePanel extends JPanel {
 		newRecordDialog.add(buttonPanel, BorderLayout.SOUTH);
 		newRecordDialog.setSize(new Dimension(200,300));
 		newRecordDialog.setLocation(new Point(100,100));
+		newRecordDialog.pack();
 		newRecordDialog.setVisible(true);
 		//newRecordDialog.setPreferredSize(new Dimension(100,200));
 	}
@@ -545,5 +505,6 @@ class TablePanel extends JPanel {
 				
 		return -1;
 	}
+
 	
 }

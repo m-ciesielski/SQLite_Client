@@ -19,7 +19,11 @@ import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.ListSelectionListener;
 import javax.swing.table.TableModel;
 
-
+/**
+ * Interface of controller responsible for updating names of tables and views.
+ * @author Owen
+ *
+ */
 interface DatabaseOverviewController{
 	void updateTableNames();
 	void updateViewNames();
@@ -57,9 +61,9 @@ class SideController implements Loggable, DatabaseOverviewController{
 	public void updateTableNames(){
 		view.removeListListener();
 		model.clearTableNames();
-			view.clearListModel();
-			model.fetchTableNames();
-			ArrayList<String> tableNames=model.getTableNames();
+		view.clearListModel();
+		model.fetchTableNames();
+		ArrayList<String> tableNames=model.getTableNames();
 			for(int i=0;i<tableNames.size();++i)
 				view.addListElement(tableNames.get(i));
 				
@@ -134,6 +138,7 @@ class DefaultTableController implements Loggable, TableController{
 	private DefaultTableModel model;
 	private TablePanel view;
 	private TableEditionModel editionModel;
+
 	private int mode; //0=tabela, 1=widok
 	public DefaultTableController(DefaultTableModel model, TablePanel view) {
 		this.model=model;
@@ -142,7 +147,9 @@ class DefaultTableController implements Loggable, TableController{
 		initializeViewListeners();
 	}
 	
-	public void setMode(int mode){this.mode=mode;}
+	public void setMode(int mode){
+		if(mode==0||mode==1)
+		this.mode=mode;}
 	
 	private void initializeViewListeners(){
 		addNewRecordButtonListener(view.getNewRecordButton());
@@ -155,7 +162,7 @@ class DefaultTableController implements Loggable, TableController{
 			
 			@Override
 			public void actionPerformed(ActionEvent e) {
-				if(mode==0)
+				if(dbase.connected && mode==0)
 				{
 					view.createNewRecordDialog(model.getColumnNames(), model.getColumnClasses());
 					addCommitButtonListener(view.getCommitButton());	
@@ -171,7 +178,7 @@ class DefaultTableController implements Loggable, TableController{
 			@Override
 			public void actionPerformed(ActionEvent e) {
 				Query insertQuery=new Query(Query.MainStatement.INSERT, model.getTableName(),
-						model.getColumnNames(), null, view.getInsertedValues());
+						model.getColumnNames(), view.getInsertedValues());
 				model.executeQuery(insertQuery.createQueryString());
 				clearView();
 				createTable();
@@ -209,8 +216,8 @@ class DefaultTableController implements Loggable, TableController{
 		{
 			for(int j=0;j<PKCount;++j)
 			{
-				System.out.println("selectedRows[i]="+selectedRows[i]);
-				System.out.println("PKColumnIndex[j]="+PKColumnIndex[j]);
+				//System.out.println("selectedRows[i]="+selectedRows[i]);
+				//System.out.println("PKColumnIndex[j]="+PKColumnIndex[j]);
 				compositePK[k]=(int) tabModel.getValueAt(selectedRows[i], PKColumnIndex[j]);
 				++k;
 			}
@@ -219,19 +226,15 @@ class DefaultTableController implements Loggable, TableController{
 		return compositePK;
 	}
 	
-	private void addDeleteConfirmationOptionPaneListener(final JOptionPane optionPane){
+	private void addDeleteOptionPaneListener(final JOptionPane optionPane){
 		optionPane.addPropertyChangeListener(new PropertyChangeListener() {
 			
 			@Override
 			public void propertyChange(PropertyChangeEvent evt) {
 				int value = ((Integer)optionPane.getValue()).intValue();
 				if (value == JOptionPane.OK_OPTION) {
-					Query deleteQuery=null;
-					//if(model.getPrimaryKeyColumnsCount()<2) //standard delete when primary key is singular
-				  //  deleteQuery=new Query(Query.MainStatement.DELETE, model.getTableName(),
-				  //  		model.getPrimaryKeyColumns(), view.getTable().getSelectedRows());
-					//else //composite primary keys deletion
-						deleteQuery=new Query(Query.MainStatement.DELETE, model.getTableName(),
+
+						Query deleteQuery=new Query(Query.MainStatement.DELETE, model.getTableName(),
 					    		model.getPrimaryKeyColumns(), getCompositePrimaryKeys());
 						if(deleteQuery!=null)
 				    model.executeQuery(deleteQuery.createQueryString());
@@ -239,13 +242,13 @@ class DefaultTableController implements Loggable, TableController{
 					createTable();
 					view.revalidate();
 					view.repaint();
-					view.getDeleteConfirmationDialog().dispatchEvent(new WindowEvent(
-		                    view.getDeleteConfirmationDialog(), WindowEvent.WINDOW_CLOSING));
+					view.getDeleteDialog().dispatchEvent(new WindowEvent(
+		                    view.getDeleteDialog(), WindowEvent.WINDOW_CLOSING));
 				    
 				} else if (value == JOptionPane.CANCEL_OPTION) {
 				   // view.getDeleteConfirmationDialog().setVisible(false);
-				    view.getDeleteConfirmationDialog().dispatchEvent(new WindowEvent(
-		                    view.getDeleteConfirmationDialog(), WindowEvent.WINDOW_CLOSING));
+				    view.getDeleteDialog().dispatchEvent(new WindowEvent(
+		                    view.getDeleteDialog(), WindowEvent.WINDOW_CLOSING));
 				}
 				
 			}
@@ -257,12 +260,12 @@ class DefaultTableController implements Loggable, TableController{
 			
 			@Override
 			public void actionPerformed(ActionEvent e) {
-				if(view.getTable().getSelectedRows().length>0)
+				if(dbase.connected && view.getTable().getSelectedRows().length>0 )
 				{
 					if(mode==0)
 					{
 						view.popupDeleteConfirmationDialog();
-						addDeleteConfirmationOptionPaneListener(view.getDeleteConfirmationOptionPane());		
+						addDeleteOptionPaneListener(view.getDeleteOptionPane());		
 					}
 					
 				}
@@ -272,20 +275,20 @@ class DefaultTableController implements Loggable, TableController{
 	}
 	
 	
-	private Object[][] tableDataToArray(ArrayList<ArrayList<Object>> arg){
+	private Object[][] tableDataToArray(ArrayList<ArrayList<Object>> data){
 		Object array [][];
-		array=new Object[arg.size()][];
+		array=new Object[data.size()][];
 		
-		for(int i=0;i<arg.size();++i)
-			array[i]=arg.get(i).toArray();
+		for(int i=0;i<data.size();++i)
+			array[i]=data.get(i).toArray();
 		
 		return array;
 	}
 	
-	private String [] columnNamesToArray(ArrayList<String> arg){
+	private String [] columnNamesToArray(ArrayList<String> columns){
 		String array [];
-		array=new String[arg.size()];
-		array=arg.toArray(array);
+		array=new String[columns.size()];
+		array=columns.toArray(array);
 		return array;
 	}
 	public void clearView(){
@@ -305,12 +308,18 @@ class DefaultTableController implements Loggable, TableController{
 			
 			@Override
 			public void actionPerformed(ActionEvent e) {
+				if(dbase.connected)
 				view.popupFilterDialog(model.getColumnClasses());
 			}
 		});
 	}
 	
 	public void setModelTableName(String tableName){
+		//delete unclosed filter view
+		if(view.getFilterDialog() != null)
+			 view.getFilterDialog().dispatchEvent(new WindowEvent(
+	                    view.getFilterDialog(), WindowEvent.WINDOW_CLOSING));
+		
 		model.setTableName(tableName);
 		LOGGER.info("Model table name set to: "+model.getTableName());
 	}

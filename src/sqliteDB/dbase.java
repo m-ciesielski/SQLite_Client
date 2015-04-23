@@ -13,6 +13,8 @@ import java.util.logging.Logger;
 import javax.swing.JFrame;
 import javax.swing.SwingUtilities;
 
+//TODO: Update on tables with composite keys
+
 
 interface Loggable{
 	final static Logger LOGGER=Logger.getLogger("CRUD SQLITE Log");
@@ -75,9 +77,6 @@ public static void main (String args[])
 	   TablePanel mainPanel=new TablePanel(f);
 	   SidePanel sidePanel=new SidePanel(f);
 	   
-		Logger logger=Logger.getLogger("CRUD SQLITE Log");
-	   	//Log.initializeLog(logger);
-	   	Query.logger=logger;
 	   	
 	   	DefaultTableModel tableModel=new DefaultTableModel();
 	   	
