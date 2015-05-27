@@ -72,7 +72,6 @@ class dbase
 	
 public static void main (String args[])
 {  
-      //runTest();
 	   final JFrame f = new JFrame("CRUD");
 	   TablePanel mainPanel=new TablePanel(f);
 	   SidePanel sidePanel=new SidePanel(f);
@@ -89,50 +88,29 @@ public static void main (String args[])
 	   {
 		   
 		   	
-		   	//DatabaseTableModel.stat=stat;
-		   	//AbstractModel.conn=conn;
-		   	
 
 		   tableModel.setTableName(sideModel.getTableName(0));
 		    sideController.updateTableNames();
-		    System.out.println("fdsfdsf");
+
 		    mainPanelController.createTable();
 		    
-		   // sideController.addSidePanelListListener();
 		    sideController.addSidePanelTabListener();
 	   }
 	   
 	   
-	   
-	   //conn = getConnection();
-	   //stat = conn.createStatement();
-	   
-	 //+=================================================//
-	    ///TEST MVC
-	   	
-	  //+=================================================//
-	    
-	 //=====================================================//
+	 
 	   //Inicjalizacja GUI
 	   SwingUtilities.invokeLater(new Runnable() {
            public void run() {
-           		//f.repaint();
-               //createAndShowGridGUI(mainPan);
         	   createAndShowGUI(f);
         	   
            }
        });
-	 //=====================================================//
 
    
 }
 
 
-/**
-   Nawiṗzuje poġṗczenie, korzystajṗc
-   z wġaciwoci w pliku database.properties
-   @return poġṗczenie do bazy danych
-*/
 private static void closeJDBCResources(){
 	try{
 		if(stat!=null)
@@ -145,7 +123,7 @@ private static void closeJDBCResources(){
 	}
 }
 
-public static Connection getConnection()
+public static Connection getConnection(String username, String password)
    throws SQLException, IOException
 {  
    Properties props = new Properties();
@@ -157,10 +135,10 @@ public static Connection getConnection()
    if (drivers != null)
       System.setProperty("jdbc.drivers", drivers);
    String url = props.getProperty("jdbc.url");
-   //String username = props.getProperty("jdbc.username");
-   //String password = props.getProperty("jdbc.password");
+   //props.setProperty("jdbc.password", password);
+   //props.setProperty("jdbc.user", username);
 
-   return DriverManager.getConnection(url);//, username, password);
+   return DriverManager.getConnection(url, username, password);
 }
 
 public static Connection getConnection(String databasePath)
